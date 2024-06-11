@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>책 검색 사이트</title>
+    <link rel="stylesheet" href="css/kakaoBookSearch.css">
+</head>
+<body>
+
+    <header>
+        <h1>FI-BO 도서관 시스템</h1>
+        <nav>
+            <ul>
+                <li><a href="/">홈</a></li>
+                <li><a href="/kakaoBookSearch">도서 검색</a></li>
+            </ul>
+        </nav>
+    </header>
+
+
+    <main>
+        <!-- 검색 폼 -->
+        <div class="search-form">
+            <form id="searchForm" onsubmit="return false;">
+                <label for="searchType">검색 유형:</label>
+                <select id="searchType">
+                    <option value="title">제목</option>
+                    <option value="authors">저자</option>
+                </select>
+                <input type="text" id="query" placeholder="검색어를 입력하세요">
+                <button type="button" id="search">검색</button>
+            </form>
+        </div>
+
+        <!-- 그리드 선택 -->
+        <div class="grid-selector">
+            <label for="gridSize">그리드 크기:</label>
+            <select id="gridSize">
+                <option value="3">3x3</option>
+                <option value="4">4x4</option>
+                <option value="5">5x5</option>
+            </select>
+            <button type="button" id="applyGridSize">적용</button>
+        </div>
+
+        <!-- 검색 결과 -->
+        <div class="search-results">
+            <hr>
+            <p id="resultCount"></p>
+            <div class="book-grid" id="bookGrid"></div>
+            <div class="pagination" id="pagination"></div>
+        </div>
+    </main>
+
+
+    <footer>
+        <p>&copy; 2024 도서관 시스템. 모든 권리 보유.</p>
+    </footer>
+
+
+    <script src="https://code.jquery.com/jquery-3.6.0.js"
+        integrity="sha256-H+K7U5CnXl1h5ywQfKtSj8PCmoN9aaq30gDh27Xc0jk=" crossorigin="anonymous"></script>
+    <script>
+        $(document).ready(function () {
+            var pageNum = 1;
+            var totalPages = 1;
+            var itemsPerPage = 9;
+            var cols = 3;
+            var currentQuery = "";
+            var currentSearchType = "";
+            var filteredBooks = [];
+
+            // 그리드
+            function applyGridSize() {
+                cols = $("#gridSize").val();
+                itemsPerPage = cols * cols;
+                $(".book-grid").css("grid-template-columns", `repeat(${cols}, 1fr)`);
+                if (currentQuery) {
+                    pageNum = 1;
+                    renderBooks();
+                }
+            }
+
+            $("#applyGridSize").click(applyGridSize);
+
+            // 검색 이벤트
+            $("#search").click(function () {
+                pageNum = 1;
+                currentQuery = $("#query").val();
+                currentSearchType = $("#searchType").val();
+                searchBooks();
+            });
+
+
+            $("#query").keypress(function (e) {
+                if (e.which === 13) {
+                    e.preventDefault();
+                    $("#search").click();
+                }
+            });
+
+            // 책 검색
+            function searchBooks() {
+                $("#bookGrid").html("");
+                $("#pagination").html("");
+                $("#resultCount").html("");
+
+                var data = {
+                    searchType: currentSearchType,
+                    query: currentQuery,
+                    page: pageNum,
+                    size: 50
+                };
+
+                $.ajax({
+                    method: "GET",
+                    url: "/api/searchBooks",
+                    data: data
+                })
+                .done(function (msg) {
+                    var data = JSON.parse(msg);
+
+                    // 검색어에 맞게 필터링
+                    filteredBooks = data.documents.filter(function (book) {
+                        if (currentSearchType === 'title') {
+                            return book.title.includes(currentQuery);
+                        } else if (currentSearchType === 'authors') {
+                            return book.authors.some(author => author.includes(currentQuery));
+                        }
+                        return false;
+                    });
+
+
+                    $("#resultCount").html(`총 검색 결과: ${filteredBooks.length}건`);
+
+                    // 페이지 수
+                    totalPages = Math.ceil(filteredBooks.length / itemsPerPage);
+
+                    renderBooks();
+                })
+                .fail(function (jqXHR, textStatus, errorThrown) {
+                    console.error("Error: " + textStatus);
+                    console.error("Error Thrown: " + errorThrown);
+                });
+            }
+
+            // 책 목록
+            function renderBooks() {
+                $("#bookGrid").html("");
+                var start = (pageNum - 1) * itemsPerPage;
+                var end = start + itemsPerPage;
+                var paginatedBooks = filteredBooks.slice(start, end);
+
+                if (paginatedBooks.length > 0) {
+                    paginatedBooks.forEach(function (book) {
+                        var datetimeFormatted = new Date(book.datetime).toISOString().split('T')[0]; // ISO 형식의 날짜를 yyyy-MM-dd로 변환
+                        $("#bookGrid").append(
+                            "<div class='book-item'>" +
+                                "<a href='/bookDetail?title=" + encodeURIComponent(book.title) +
+                                "&thumbnail=" + encodeURIComponent(book.thumbnail) +
+                                "&authors=" + encodeURIComponent(book.authors.join(", ")) +
+                                "&publisher=" + encodeURIComponent(book.publisher) +
+                                "&datetime=" + encodeURIComponent(datetimeFormatted) +
+                                "&contents=" + encodeURIComponent(book.contents) +
+                                "&url=" + encodeURIComponent(book.url) +
+                                "&isbn=" + encodeURIComponent(book.isbn) +
+                                "&price=" + encodeURIComponent(book.price) +
+                                "&sale_price=" + encodeURIComponent(book.sale_price) +
+                                "&status=" + encodeURIComponent(book.status) +
+                                "&translators=" + encodeURIComponent(book.translators.join(", ")) + "'>" +
+                                    "<img src='" + book.thumbnail + "' alt='책 표지' class='book-thumbnail'/>" +
+                                    "<div class='book-details'>" +
+                                        "<h2>" + book.title + "</h2>" +
+                                        "<p><strong>저자:</strong> " + book.authors.join(", ") + "</p>" +
+                                        "<p><strong>출판사:</strong> " + book.publisher + "</p>" +
+                                    "</div>" +
+                                "</a>" +
+                            "</div>"
+                        );
+                    });
+                } else {
+                    $("#bookGrid").append("<p>검색 결과가 없습니다.</p>");
+                }
+
+                renderPagination();
+            }
+
+            // 페이지
+            function renderPagination() {
+                $("#pagination").html("");
+
+                var startPage = Math.floor((pageNum - 1) / 10) * 10 + 1;
+                var endPage = Math.min(startPage + 9, totalPages);
+
+                if (startPage > 1) {
+                    $("#pagination").append("<button class='prev-group'>이전</button>");
+                }
+
+                for (var i = startPage; i <= endPage; i++) {
+                    var button = $("<button>").text(i);
+                    if (i === pageNum) {
+                        button.attr("disabled", true);
+                    }
+                    button.click(function () {
+                        pageNum = parseInt($(this).text());
+                        renderBooks();
+                    });
+                    $("#pagination").append(button);
+                }
+
+                if (endPage < totalPages) {
+                    $("#pagination").append("<button class='next-group'>다음</button>");
+                }
+
+                $(".prev-group").click(function () {
+                    pageNum = startPage - 1;
+                    renderBooks();
+                });
+
+                $(".next-group").click(function () {
+                    pageNum = endPage + 1;
+                    renderBooks();
+                });
+            }
+
+            // 초기 그리드
+            applyGridSize();
+        });
+    </script>
+</body>
+</html>
